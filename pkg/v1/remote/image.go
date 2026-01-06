@@ -17,9 +17,11 @@ package remote
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"sync"
 
 	"github.com/google/go-containerregistry/internal/redact"
@@ -101,35 +103,51 @@ func (r *remoteImage) RawManifest() ([]byte, error) {
 }
 
 func (r *remoteImage) RawConfigFile() ([]byte, error) {
+	fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] RawConfigFile: Called for image reference: %s\n", r.ref.String())
+	
 	r.configLock.Lock()
 	defer r.configLock.Unlock()
 	if r.config != nil {
+		fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] RawConfigFile: Using cached config (length: %d bytes)\n", len(r.config))
 		return r.config, nil
 	}
 
+	fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] RawConfigFile: Fetching manifest to get config descriptor\n")
 	m, err := partial.Manifest(r)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] RawConfigFile: Failed to get manifest: %v\n", err)
 		return nil, err
 	}
 
+	fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] RawConfigFile: Manifest retrieved, config digest: %s, size: %d\n", m.Config.Digest.String(), m.Config.Size)
+
 	if m.Config.Data != nil {
+		fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] RawConfigFile: Config data already in manifest, using it\n")
 		if err := verify.Descriptor(m.Config); err != nil {
+			fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] RawConfigFile: Descriptor verification failed: %v\n", err)
 			return nil, err
 		}
 		r.config = m.Config.Data
 		return r.config, nil
 	}
 
+	fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] RawConfigFile: Config data not in manifest, calling fetchBlob to fetch from registry\n")
 	body, err := r.fetcher.fetchBlob(r.ctx, m.Config.Size, m.Config.Digest)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] RawConfigFile: fetchBlob failed: %v\n", err)
+		fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] RawConfigFile: Error type: %T\n", err)
 		return nil, err
 	}
 	defer body.Close()
 
+	fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] RawConfigFile: fetchBlob succeeded, reading response body\n")
 	r.config, err = io.ReadAll(body)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] RawConfigFile: Failed to read body: %v\n", err)
 		return nil, err
 	}
+	
+	fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] RawConfigFile: Successfully read config file, length: %d bytes\n", len(r.config))
 	return r.config, nil
 }
 

@@ -21,6 +21,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 
 	"github.com/google/go-containerregistry/internal/redact"
@@ -252,15 +253,27 @@ func (f *fetcher) fetchBlob(ctx context.Context, size int64, h v1.Hash) (io.Read
 		return nil, err
 	}
 
+	fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] fetchBlob: Making GET request to %s\n", u.String())
+	fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] fetchBlob: Expected blob size: %d, digest: %s\n", size, h.String())
+
 	resp, err := f.client.Do(req.WithContext(ctx))
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] fetchBlob: HTTP request failed: %v\n", err)
 		return nil, redact.Error(err)
 	}
 
+	fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] fetchBlob: Response received - Status: %d %s\n", resp.StatusCode, resp.Status)
+	fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] fetchBlob: Response headers - Content-Type: %s, Content-Length: %d\n", resp.Header.Get("Content-Type"), resp.ContentLength)
+	fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] fetchBlob: Calling transport.CheckError with expected status: %d\n", http.StatusOK)
+
 	if err := transport.CheckError(resp, http.StatusOK); err != nil {
+		fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] fetchBlob: CheckError returned error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] fetchBlob: Error type: %T\n", err)
 		resp.Body.Close()
 		return nil, err
 	}
+	
+	fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] fetchBlob: CheckError passed, returning blob reader\n")
 
 	// Do whatever we can.
 	// If we have an expected size and Content-Length doesn't match, return an error.
