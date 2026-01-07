@@ -15,8 +15,11 @@
 package v1
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
+	"os"
 
 	"github.com/google/go-containerregistry/pkg/v1/types"
 )
@@ -54,8 +57,19 @@ type Descriptor struct {
 
 // ParseManifest parses the io.Reader's contents into a Manifest.
 func ParseManifest(r io.Reader) (*Manifest, error) {
+	// Read content to log before parsing
+	content, err := io.ReadAll(r)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] ParseManifest ERROR: %v\n", err)
+		return nil, err
+	}
+
+	// Log complete response body BEFORE JSON decode
+	fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] ParseManifest RESPONSE BODY: %s\n", string(content))
+
 	m := Manifest{}
-	if err := json.NewDecoder(r).Decode(&m); err != nil {
+	if err := json.NewDecoder(bytes.NewReader(content)).Decode(&m); err != nil {
+		fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] ParseManifest ERROR: %v\n", err)
 		return nil, err
 	}
 	return &m, nil

@@ -155,43 +155,27 @@ var temporaryStatusCodes = map[int]struct{}{
 
 // CheckError returns a structured error if the response status is not in codes.
 func CheckError(resp *http.Response, codes ...int) error {
-	fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] CheckError: Checking response status: %d %s\n", resp.StatusCode, resp.Status)
-	fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] CheckError: Expected status codes: %v\n", codes)
-	
 	for _, code := range codes {
 		if resp.StatusCode == code {
 			// This is one of the supported status codes.
-			fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] CheckError: Status code %d matches expected, returning nil\n", resp.StatusCode)
 			return nil
 		}
 	}
 
-	fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] CheckError: Status code %d does NOT match expected codes, reading response body\n", resp.StatusCode)
 	b, err := io.ReadAll(resp.Body)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] CheckError: Failed to read response body: %v\n", err)
 		return err
 	}
 
-	fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] CheckError: Response body length: %d bytes\n", len(b))
-	if len(b) > 0 {
-		previewLen := len(b)
-		if previewLen > 500 {
-			previewLen = 500
-		}
-		previewStr := string(b[:previewLen])
-		fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] CheckError: Response body preview (first %d bytes): %q\n", previewLen, previewStr)
-		
-		// Check if it looks like HTML
-		if strings.HasPrefix(strings.TrimSpace(string(b)), "<") {
-			fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] CheckError: WARNING - Response body appears to be HTML, not JSON!\n")
-			if len(b) < 2000 {
-				fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] CheckError: Full HTML response: %s\n", string(b))
-			}
-		}
-	}
+	// Log status code and response body
+	fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] CheckError STATUS CODE: %d\n", resp.StatusCode)
+	fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] CheckError RESPONSE BODY: %s\n", string(b))
 
-	return makeError(resp, b)
+	err = makeError(resp, b)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] CheckError ERROR: %v\n", err)
+	}
+	return err
 }
 
 func makeError(resp *http.Response, body []byte) *Error {

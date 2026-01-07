@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 	"time"
 )
 
@@ -148,65 +147,21 @@ type Config struct {
 
 // ParseConfigFile parses the io.Reader's contents into a ConfigFile.
 func ParseConfigFile(r io.Reader) (*ConfigFile, error) {
-	fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] ParseConfigFile: Starting to parse config file\n")
-	
 	// Read the content first for debugging
 	content, err := io.ReadAll(r)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] ParseConfigFile: Failed to read content: %v\n", err)
+		fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] ParseConfigFile ERROR: %v\n", err)
 		return nil, err
 	}
-	
-	fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] ParseConfigFile: Content length: %d bytes\n", len(content))
-	
-	// Log preview of content
-	if len(content) > 0 {
-		previewLen := len(content)
-		if previewLen > 500 {
-			previewLen = 500
-		}
-		previewStr := string(content[:previewLen])
-		fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] ParseConfigFile: Content preview (first %d bytes): %q\n", previewLen, previewStr)
-		
-		// Check if it looks like HTML
-		trimmed := strings.TrimSpace(string(content))
-		if strings.HasPrefix(trimmed, "<") {
-			fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] ParseConfigFile: ERROR - Content appears to be HTML, not JSON!\n")
-			fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] ParseConfigFile: This will cause 'invalid character '<' looking for beginning of value' error\n")
-			if len(content) < 2000 {
-				fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] ParseConfigFile: Full content: %s\n", string(content))
-			} else {
-				fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] ParseConfigFile: Full content (truncated at 2000): %s...\n", string(content[:2000]))
-			}
-		} else {
-			previewStart := trimmed
-			if len(previewStart) > 50 {
-				previewStart = previewStart[:50]
-			}
-			fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] ParseConfigFile: Content does not appear to be HTML (starts with: %q)\n", previewStart)
-		}
-	} else {
-		fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] ParseConfigFile: Content is empty\n")
-	}
-	
+
+	// Log response body
+	fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] ParseConfigFile RESPONSE BODY: %s\n", string(content))
+
 	cf := ConfigFile{}
-	fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] ParseConfigFile: Attempting JSON decode...\n")
 	if err := json.NewDecoder(bytes.NewReader(content)).Decode(&cf); err != nil {
-		fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] ParseConfigFile: JSON decode FAILED: %v\n", err)
-		fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] ParseConfigFile: Error type: %T\n", err)
-		if len(content) > 0 {
-			previewLen := len(content)
-			if previewLen > 100 {
-				previewLen = 100
-			}
-			fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] ParseConfigFile: Content starts with: %q\n", string(content[:previewLen]))
-			if strings.HasPrefix(strings.TrimSpace(string(content)), "<") {
-				fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] ParseConfigFile: Root cause identified - HTML response instead of JSON!\n")
-			}
-		}
+		fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] ParseConfigFile ERROR: %v\n", err)
 		return nil, err
 	}
-	
-	fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] ParseConfigFile: Successfully parsed config file\n")
+
 	return &cf, nil
 }

@@ -19,6 +19,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -127,11 +128,44 @@ func (f *fetcher) fetchManifest(ctx context.Context, ref name.Reference, accepta
 	}
 	req.Header.Set("Accept", strings.Join(accept, ","))
 
+	// Log complete request details BEFORE sending
+	fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] fetchManifest REQUEST METHOD: %s\n", req.Method)
+	fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] fetchManifest REQUEST URL: %s\n", u.String())
+	fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] fetchManifest REQUEST HEADERS:\n")
+	for key, values := range req.Header {
+		for _, value := range values {
+			// Redact Authorization header for security
+			if key == "Authorization" {
+				if len(value) > 20 {
+					fmt.Fprintf(os.Stderr, "  %s: %s...%s (redacted)\n", key, value[:10], value[len(value)-5:])
+				} else {
+					fmt.Fprintf(os.Stderr, "  %s: [redacted]\n", key)
+				}
+			} else {
+				fmt.Fprintf(os.Stderr, "  %s: %s\n", key, value)
+			}
+		}
+	}
+	fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] fetchManifest REFERENCE: %s\n", ref.String())
+	fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] fetchManifest IDENTIFIER: %s\n", ref.Identifier())
+
 	resp, err := f.client.Do(req.WithContext(ctx))
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] fetchManifest REQUEST ERROR: %v\n", err)
 		return nil, nil, err
 	}
 	defer resp.Body.Close()
+
+	// Log response status immediately
+	fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] fetchManifest RESPONSE STATUS: %d %s\n", resp.StatusCode, resp.Status)
+	
+	// Log response headers
+	fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] fetchManifest RESPONSE HEADERS:\n")
+	for key, values := range resp.Header {
+		for _, value := range values {
+			fmt.Fprintf(os.Stderr, "  %s: %s\n", key, value)
+		}
+	}
 
 	if err := transport.CheckError(resp, http.StatusOK); err != nil {
 		return nil, nil, err
@@ -141,6 +175,9 @@ func (f *fetcher) fetchManifest(ctx context.Context, ref name.Reference, accepta
 	if err != nil {
 		return nil, nil, err
 	}
+
+	// Log complete response BEFORE any parsing
+	fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] fetchManifest RESPONSE BODY: %s\n", string(manifest))
 
 	digest, size, err := v1.SHA256(bytes.NewReader(manifest))
 	if err != nil {
@@ -253,27 +290,58 @@ func (f *fetcher) fetchBlob(ctx context.Context, size int64, h v1.Hash) (io.Read
 		return nil, err
 	}
 
-	fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] fetchBlob: Making GET request to %s\n", u.String())
-	fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] fetchBlob: Expected blob size: %d, digest: %s\n", size, h.String())
+	log.Printf("[DEBUG go-containerregistry] fetchBlob: Making GET request to %s", u.String())
+	log.Printf("[DEBUG go-containerregistry] fetchBlob: Expected blob size: %d, digest: %s", size, h.String())
 
 	resp, err := f.client.Do(req.WithContext(ctx))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] fetchBlob: HTTP request failed: %v\n", err)
+		log.Printf("[DEBUG go-containerregistry] fetchBlob: HTTP request failed: %v", err)
 		return nil, redact.Error(err)
 	}
 
-	fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] fetchBlob: Response received - Status: %d %s\n", resp.StatusCode, resp.Status)
-	fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] fetchBlob: Response headers - Content-Type: %s, Content-Length: %d\n", resp.Header.Get("Content-Type"), resp.ContentLength)
-	fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] fetchBlob: Calling transport.CheckError with expected status: %d\n", http.StatusOK)
+	log.Printf("[DEBUG go-containerregistry] fetchBlob: Response status: %d %s", resp.StatusCode, resp.Status)
+	log.Printf("[DEBUG go-containerregistry] fetchBlob: Response headers: Content-Type=%s, Content-Length=%d", resp.Header.Get("Content-Type"), resp.ContentLength)
+
+	// Read the full response body for debugging (before CheckError consumes it)
+	bodyBytes, readErr := io.ReadAll(resp.Body)
+	resp.Body.Close()
+
+	if readErr != nil {
+		log.Printf("[DEBUG go-containerregistry] fetchBlob: Failed to read response body: %v", readErr)
+	}
+
+	// Log preview of response body
+	previewLen := len(bodyBytes)
+	if previewLen > 500 {
+		previewLen = 500
+	}
+	previewStr := string(bodyBytes[:previewLen])
+	log.Printf("[DEBUG go-containerregistry] fetchBlob: Response body length: %d bytes", len(bodyBytes))
+	log.Printf("[DEBUG go-containerregistry] fetchBlob: Response body preview (first %d bytes): %q", previewLen, previewStr)
+
+	// Check if it looks like HTML
+	if len(bodyBytes) > 0 && strings.HasPrefix(strings.TrimSpace(string(bodyBytes)), "<") {
+		log.Printf("[DEBUG go-containerregistry] fetchBlob: WARNING - Response appears to be HTML, not JSON!")
+		log.Printf("[DEBUG go-containerregistry] fetchBlob: Status code: %d, This will cause JSON decode errors later", resp.StatusCode)
+		if len(bodyBytes) < 2000 {
+			log.Printf("[DEBUG go-containerregistry] fetchBlob: Full HTML response: %s", string(bodyBytes))
+		}
+	}
+
+	// Recreate response body for CheckError
+	resp.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 
 	if err := transport.CheckError(resp, http.StatusOK); err != nil {
-		fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] fetchBlob: CheckError returned error: %v\n", err)
-		fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] fetchBlob: Error type: %T\n", err)
+		log.Printf("[DEBUG go-containerregistry] fetchBlob: CheckError returned error: %v", err)
+		log.Printf("[DEBUG go-containerregistry] fetchBlob: Error status code: %d", resp.StatusCode)
 		resp.Body.Close()
 		return nil, err
 	}
-	
-	fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] fetchBlob: CheckError passed, returning blob reader\n")
+
+	log.Printf("[DEBUG go-containerregistry] fetchBlob: CheckError passed, returning blob reader")
+
+	// Recreate body reader for the actual return
+	resp.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 
 	// Do whatever we can.
 	// If we have an expected size and Content-Length doesn't match, return an error.

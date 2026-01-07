@@ -104,7 +104,7 @@ func (r *remoteImage) RawManifest() ([]byte, error) {
 
 func (r *remoteImage) RawConfigFile() ([]byte, error) {
 	fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] RawConfigFile: Called for image reference: %s\n", r.ref.String())
-	
+
 	r.configLock.Lock()
 	defer r.configLock.Unlock()
 	if r.config != nil {
@@ -114,6 +114,7 @@ func (r *remoteImage) RawConfigFile() ([]byte, error) {
 
 	fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] RawConfigFile: Fetching manifest to get config descriptor\n")
 	m, err := partial.Manifest(r)
+
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] RawConfigFile: Failed to get manifest: %v\n", err)
 		return nil, err
@@ -146,7 +147,7 @@ func (r *remoteImage) RawConfigFile() ([]byte, error) {
 		fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] RawConfigFile: Failed to read body: %v\n", err)
 		return nil, err
 	}
-	
+
 	fmt.Fprintf(os.Stderr, "[DEBUG go-containerregistry] RawConfigFile: Successfully read config file, length: %d bytes\n", len(r.config))
 	return r.config, nil
 }
